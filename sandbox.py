@@ -7,13 +7,15 @@ Created on Thu May  5 20:41:38 2022
 """
 
 import numpy as np
-import os
 import struct
 import ctypes as ct
 
-filename='2dscan.OPDx'
+filename='test.OPDx'
 MAGIC=b'VCA DATA\x01\x00\x00U'
 MAGIC_SIZE=12
+
+class EndOfFileSignal(Exception):
+       pass
 
 class DektakItem:
     
@@ -30,7 +32,7 @@ class DektakLoad:
                     'DEKTAK_UINT32'       : 0x07,
                     'DEKTAK_SINT64'       : 0x0a,
                     'DEKTAK_UINT64'       : 0x0b,
-                    'DEKTAK_FLOAT'       : 0x0c, # Single precision float */
+                    'DEKTAK_FLOAT'        : 0x0c, # Single precision float */
                     'DEKTAK_DOUBLE'       : 0x0d, # Double precision float */
                     'DEKTAK_TYPE_ID'      : 0x0e, # Compound type holding some kind of type id */
                     'DEKTAK_STRING'       : 0x12, # Free-form string value */
@@ -52,10 +54,15 @@ class DektakLoad:
     def __init__(self,filename):
         self.filename=filename
         self.items=[]
+        self.reading_2D=False
+        self.reading_1D=False
+        self.terminator=False
+        self.current_count=0
+        self.read()
     
     def read_varlen(self, f):
         length=int.from_bytes(f.read(1),"big")
-
+        #print('the length is {:}'.format(length))
         if length==1:
             return int.from_bytes(f.read(1),"big")
         elif length==2:
@@ -66,69 +73,192 @@ class DektakLoad:
             print('there was a problem')
             return -1
     
+    def read_structured(self, item, f):
+        number_of_items=self.read_varlen(f)
+        item.data=dict()
+        item.data['items']=[]
+        for i in range(number_of_items):
+            if self.terminator:
+                self.terminator=False
+                break
+            else:
+                item.data['items'].append(self.read_item(f))
+        return item
+    
     def read_name(self, f):
         data=f.read(4)
         length=struct.unpack('i',data)[0]
         return f.read(length).decode()
+            
+
     
+    def read_item(self, f):
+        item=DektakItem()
+        item.name=self.read_name(f)
+        datatype=f.read(1)
+        #print('hello: {:}'.format(datatype))
+        item.data_type=int.from_bytes(datatype, "big")
+        if item.data_type==DektakLoad.data_types['DEKTAK_BOOLEAN']:
+            item.data=f.read(1)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_SINT32']:
+            item.data=struct.unpack('I',f.read(4))[0]
+        elif item.data_type==DektakLoad.data_types['DEKTAK_UINT32']:
+            item.data=struct.unpack('I',f.read(4))[0]
+        elif item.data_type==DektakLoad.data_types['DEKTAK_SINT64']:
+            data=f.read(8)
+            item.data=struct.unpack('Q',data)[0]
+        elif item.data_type==DektakLoad.data_types['DEKTAK_UINT64']:
+            item.data=struct.unpack('Q',f.read(8))[0]
+        elif item.data_type==DektakLoad.data_types['DEKTAK_FLOAT']:
+            item.data=struct.unpack('f',f.read(4))[0]
+        elif item.data_type==DektakLoad.data_types['DEKTAK_DOUBLE']:
+            item.data=struct.unpack('d',f.read(8))[0]
+        elif item.data_type==DektakLoad.data_types['DEKTAK_TIME_STAMP']:
+            item.data=f.read(9)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_STRING']:
+            length=self.read_varlen(f)
+            item.data=f.read(length).decode()
+        elif item.data_type==DektakLoad.data_types['DEKTAK_STRING_LIST']:
+            item.data=dict()
+            item.data['datatype']=self.read_name(f)
+            length=self.read_varlen(f)
+            item.data['strings']=[self.read_name(f)]
+        elif item.data_type==DektakLoad.data_types['DEKTAK_DOUBLE_ARRAY']:
+            item.data=dict()
+            item.data['datatype']=self.read_name(f)
+            f.read(8)
+            item.data['data']=np.frombuffer(f.read(self.current_count*8),
+                     dtype=float)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_UNITS']:
+            item.data=dict()
+            item.data['length']=self.read_varlen(f)
+            item.data['name']=self.read_name(f)
+            item.data['symbol']=self.read_name(f)
+            item.data['value']=struct.unpack('d',f.read(8))[0]
+            f.read(12)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_QUANTITY']:
+            item.data=dict()
+            item.data['length']=self.read_varlen(f)
+            item.data['value']=struct.unpack('d',f.read(8))[0]
+            item.data['name']=self.read_name(f)
+            item.data['symbol']=self.read_name(f)
+            if len(item.data['name'])>0:
+                f.read(20)
+            else:
+                f.read(20)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_TERMINATOR']:
+            self.reading_2D=False
+            self.reading_1D=False
+            self.terminator=True
+            item.data=f.read(2)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_TYPE_ID']:
+            item.data=dict()
+            item.data['name']=self.read_name(f)
+            length=self.read_varlen(f)
+            item.data['value']=int.from_bytes(f.read(length), 'little')
+        elif item.data_type==DektakLoad.data_types['DEKTAK_POS_RAW_DATA']:
+            #print([self.reading_1D, self.reading_2D])
+            if self.reading_2D:
+                item.data=dict()
+                item.data['name']=self.read_name(f)
+                item.data['length']=self.read_varlen(f)
+                item.data['value_x']=struct.unpack('d',f.read(8))[0]
+                item.data['unit_name_x']=self.read_name(f)
+                item.data['unit_symbol_x']=self.read_name(f)
+                item.data['divisor_x']=struct.unpack('d',f.read(8))[0]
+                #print(item.data)
+                f.read(12)
+                item.data['value_y']=struct.unpack('d',f.read(8))[0]
+                item.data['unit_name_y']=self.read_name(f)
+                item.data['unit_symbol_y']=self.read_name(f)
+                item.data['divisor_y']=struct.unpack('d',f.read(8))[0]
+                f.read(12)
+            elif self.reading_1D:
+                item.data=dict()
+                item.data['name']=self.read_name(f)
+                item.data['length']=self.read_varlen(f)
+                item.data['unit_name']=self.read_name(f)
+                item.data['unit_symbol']=self.read_name(f)
+                item.data['divisor']=struct.unpack('d',f.read(8))[0]
+                f.read(12)
+                item.data['count']=struct.unpack('Q',f.read(8))[0]
+                self.current_count=item.data['count']
+                N=item.data['length']
+                N=item.data['count']
+                item.data['data']=np.frombuffer(f.read(N*8), dtype=float)
+                
+        elif item.data_type==DektakLoad.data_types['DEKTAK_ANON_MATRIX']:
+            item.data=dict()
+            item.data['name']=self.read_name(f)
+            item.data['size']=self.read_varlen(f)
+            item.data['xres']=struct.unpack('I',f.read(4))[0]
+            item.data['yres']=struct.unpack('I',f.read(4))[0]
+            if item.data['size']<2*ct.sizeof(ct.c_uint32):
+                print('PROBLEM')
+            item.data['size']-=2*ct.sizeof(ct.c_uint32)
+            N=item.data['size']
+            data=f.read(N)
+            item.data['data']=np.frombuffer(data,
+                     dtype="float32")
+            #print(item.data['data'])
+            
+            
+        elif item.data_type==DektakLoad.data_types['DEKTAK_MATRIX']:
+            item.data=dict()
+            item.data['int']=struct.unpack('i',f.read(4))[0]
+            item.data['name']=f.read(4)
+            item.data['size']=self.read_varlen(f)
+            item.data['xres']=struct.unpack('I',f.read(4))[0]
+            item.data['yres']=struct.unpack('I',f.read(4))[0]
+            if item.data['size']<2*ct.sizeof(ct.c_uint32):
+                print('PROBLEM')
+            item.data['size']-=2*ct.sizeof(ct.c_uint32)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_CONTAINER']:
+            #print('the name of this container is {:}'.format(item.name))
+            if item.name=='1D_Data':
+                self.reading_1D=True
+            elif item.name=='2D_Data':
+                self.reading_2D=True
+            item=self.read_structured(item, f)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_RAW_DATA']:
+            #print('the name of this container is {:}'.format(item.name))
+            item=self.read_structured(item, f)
+        elif item.data_type==DektakLoad.data_types['DEKTAK_RAW_DATA_2D']:
+            item=self.read_structured(item, f)
+        else:
+            print('new data_type')
+            print(f.read(100))
+            print(item.data_type)
+            item.flag=True
+        '''print('{:},{:},{:}===>>>>{:} ; {:}'.format(item.data_type,
+              f.tell(), datatype, item.name, item.data))'''
+        return item
+            
+        
     def read(self):
         with open(filename, 'rb') as f:
             while(f.tell()!=MAGIC_SIZE):
                 f.read(1)
-            while(len(self.items)<=10):
-                item=DektakItem()
-                item.name=self.read_name(f)
-                datatype=f.read(1)
-                try:
-                    item.data_type=int(datatype, 16)
-                except ValueError:
-                    item.data_type=int.from_bytes(datatype, "big")
-                if item.data_type==DektakLoad.data_types['DEKTAK_BOOLEAN']:
-                    print('yolo')
-                    item.data=f.read(1)
-                elif item.data_type==DektakLoad.data_types['DEKTAK_SINT32']:
-                    item.data=struct.unpack('I',f.read(4))[0]
-                elif item.data_type==DektakLoad.data_types['DEKTAK_UINT32']:
-                    item.data=struct.unpack('I',f.read(4))[0]
-                elif item.data_type==DektakLoad.data_types['DEKTAK_SINT64']:
-                    data=f.read(8)
-                    print(data)
-                    item.data=struct.unpack('Q',data)[0]
-                elif item.data_type==DektakLoad.data_types['DEKTAK_UINT64']:
-                    item.data=struct.unpack('Q',f.read(8))[0]
-                elif item.data_type==DektakLoad.data_types['DEKTAK_FLOAT']:
-                    item.data=struct.unpack('f',f.read(4))[0]
-                elif item.data_type==DektakLoad.data_types['DEKTAK_DOUBLE']:
-                    item.data=struct.unpack('d',f.read(8))[0]
-                elif item.data_type==DektakLoad.data_types['DEKTAK_TIME_STAMP']:
-                    item.data=f.read(9)
-                elif item.data_type==DektakLoad.data_types['DEKTAK_STRING']:
-                    item.data=f.read(9)
-                elif item.data_type==DektakLoad.data_types['DEKTAK_MATRIX']:
-                    item.data=dict()
-                    item.data['int']=struct.unpack('i',f.read(4))[0]
-                    item.data['name']=f.read(4)
-                    item.data['size']=self.read_varlen(f)
-                    item.data['xres']=struct.unpack('i',f.read(4))[0]
-                    item.data['yres']=struct.unpack('i',f.read(4))[0]
-                    if item.data['size']<2*ct.sizeof(ct.c_uint32):
-                        print('PROBLEM')
-                    item.data['size']-=2*ct.sizeof(ct.c_uint32)
-                elif item.data_type==DektakLoad.data_types['DEKTAK_CONTAINER']:
-                    number_of_items=self.read_varlen(f)
-                    
-                    #print(f.read(10))
-                else:
-                    print('new data_type')
-                    print(item.data_type)#DektakItem.data_types['DEKTAK_BOOLEAN'])
-                    item.flag=True
-                print('{:},{:},{:}===>>>>{:} ; {:}'.format(item.data_type,
-                      f.tell(), datatype, item.name, item.data))
-                self.items.append(item)
+            item=self.read_item(f)
+            #print('Number of items is {:}'.format(len(self.items)))
+            self.items.append(item)
+    
+    def get_data(self):
+        x,y,scale, divisor=None, None, None, None
+        for k in self.items[0].data['items'][0].data['items']:
+            if k.name=='PositionFunction':
+                x=k.data['data']
+                divisor=k.data['divisor']
+            elif k.name=='Array':
+                y=k.data['data']
+            elif k.name=='DataScale':
+                scale=k.data['value']
+        return x/divisor, y*scale/divisor
+                
 
 loader=DektakLoad(filename)
-loader.read()
-#%%
-filename='test.OPDx'
-with open(filename, 'rb') as f:
-    print(f.read(200))
+x,y=loader.get_data()
+
+import matplotlib.pylab as plt
+plt.close('all')
+plt.plot(x,y)
