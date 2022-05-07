@@ -9,8 +9,9 @@ Created on Thu May  5 20:41:38 2022
 import numpy as np
 import struct
 import ctypes as ct
+import matplotlib.pylab as plt
 
-filename='2dscan.OPDx'
+filename='test.OPDx'
 MAGIC=b'VCA DATA\x01\x00\x00U'
 MAGIC_SIZE=12
 
@@ -200,21 +201,22 @@ class DektakLoad:
             item.data=dict()
             item.data['name']=self.read_name(f)
             item.data['size']=self.read_varlen(f)
-            item.data['xres']=struct.unpack('I',f.read(4))[0]
             item.data['yres']=struct.unpack('I',f.read(4))[0]
+            item.data['xres']=struct.unpack('I',f.read(4))[0]
             if item.data['size']<2*ct.sizeof(ct.c_uint32):
                 print('PROBLEM')
             item.data['size']-=2*ct.sizeof(ct.c_uint32)
-            N=item.data['size']
-            data=f.read(N)
-            item.data['data']=np.frombuffer(data,
-                     dtype="float32")
+            N=item.data['xres']*item.data['yres']
+            data=f.read(4*N)
+            item.data['data']=np.reshape(np.frombuffer(data,
+                     dtype="float32"), (item.data['yres'],
+                                    item.data['xres']))
             #print(item.data['data'])
             
             
         elif item.data_type==DektakLoad.data_types['DEKTAK_MATRIX']:
             item.data=dict()
-            item.data['int']=struct.unpack('i',f.read(4))[0]
+            #item.data['int']=struct.unpack('i',f.read(4))[0]
             item.data['name']=f.read(4)
             item.data['size']=self.read_varlen(f)
             item.data['xres']=struct.unpack('I',f.read(4))[0]
@@ -255,7 +257,14 @@ class DektakLoad:
     
     def get_data_1D(self):
         x,y,scale, divisor=None, None, None, None
-        for k in self.items[0].data['items'][0].data['items']:
+        for item in self.items:
+            if item is not None:
+                if item.name=='1D_Data':
+                    break
+        for subitem in item.data['items']:
+            if subitem.name=='Raw':
+                break
+        for k in subitem.data['items']:
             if k.name=='PositionFunction':
                 x=k.data['data']
                 divisor=k.data['divisor']
@@ -264,12 +273,44 @@ class DektakLoad:
             elif k.name=='DataScale':
                 scale=k.data['value']
         return x/divisor, y*scale/divisor
+    
+    def get_data_2D(self, plot=True):
+        for item in self.items:
+            if item is not None:
+                if item.name=='2D_Data':
+                    break
+        for subitem in item.data['items']:
+            if subitem.name=='Raw':
+                break
+        for mat in subitem.data['items']:
+            if mat.name=='Matrix':
+                break
+        for scale in subitem.data['items']:
+            if scale.name=='DataScale':
+                break
+        for dim1 in subitem.data['items']:
+            if dim1.name=='Dimension1Extent':
+                break
+        for dim2 in subitem.data['items']:
+            if dim2.name=='Dimension2Extent':
+                break
+        for test in subitem.data['items']:
+            if test.name=='PositionFunction':
+                symbol_x, symbol_y=test.data['unit_symbol_x'], test.data['unit_symbol_y']
+                break
+        if plot:
+            plt.imshow(mat.data['data']*scale.data['value'],
+                       extent=[0,dim2.data['value'],
+                               0,dim1.data['value']])
+            plt.xlabel(symbol_x)
+            plt.ylabel(symbol_y)
+        return (mat.data['data']*scale.data['value'],
+                dim2.data['value'], dim1.data['value'])
                 
 
 loader=DektakLoad(filename)
-'''x,y=loader.get_data_1D()
+x,y=loader.get_data_1D()
 
 import matplotlib.pylab as plt
 plt.close('all')
-plt.plot(x,y)'''
-#%%
+plt.plot(x,y)
