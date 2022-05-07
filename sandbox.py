@@ -10,7 +10,7 @@ import numpy as np
 import struct
 import ctypes as ct
 
-filename='test.OPDx'
+filename='2dscan.OPDx'
 MAGIC=b'VCA DATA\x01\x00\x00U'
 MAGIC_SIZE=12
 
@@ -58,6 +58,10 @@ class DektakLoad:
         self.reading_1D=False
         self.terminator=False
         self.current_count=0
+        with open(self.filename, 'rb') as f:
+            f.seek(0,2)
+            self.eof=f.tell()
+            f.seek(0,0)
         self.read()
     
     def read_varlen(self, f):
@@ -74,15 +78,14 @@ class DektakLoad:
             return -1
     
     def read_structured(self, item, f):
-        number_of_items=self.read_varlen(f)
+        self.read_varlen(f)
         item.data=dict()
         item.data['items']=[]
-        for i in range(number_of_items):
-            if self.terminator:
-                self.terminator=False
-                break
-            else:
-                item.data['items'].append(self.read_item(f))
+        last_item=self.read_item(f)
+        while(not self.terminator and last_item is not None):
+            item.data['items'].append(last_item)
+            last_item=self.read_item(f)
+        self.terminator=False
         return item
     
     def read_name(self, f):
@@ -93,6 +96,12 @@ class DektakLoad:
 
     
     def read_item(self, f):
+        
+        #print(self.eof)
+        if f.tell()==self.eof:
+            return None
+        
+        
         item=DektakItem()
         item.name=self.read_name(f)
         datatype=f.read(1)
@@ -145,7 +154,7 @@ class DektakLoad:
             if len(item.data['name'])>0:
                 f.read(20)
             else:
-                f.read(20)
+                f.read(16)
         elif item.data_type==DektakLoad.data_types['DEKTAK_TERMINATOR']:
             self.reading_2D=False
             self.reading_1D=False
@@ -226,7 +235,7 @@ class DektakLoad:
         elif item.data_type==DektakLoad.data_types['DEKTAK_RAW_DATA_2D']:
             item=self.read_structured(item, f)
         else:
-            print('new data_type')
+            print('unknown data_type')
             print(f.read(100))
             print(item.data_type)
             item.flag=True
@@ -239,11 +248,12 @@ class DektakLoad:
         with open(filename, 'rb') as f:
             while(f.tell()!=MAGIC_SIZE):
                 f.read(1)
-            item=self.read_item(f)
-            #print('Number of items is {:}'.format(len(self.items)))
-            self.items.append(item)
+            while(len(self.items)<10):
+                item=self.read_item(f)
+                #print('Number of items is {:}'.format(len(self.items)))
+                self.items.append(item)
     
-    def get_data(self):
+    def get_data_1D(self):
         x,y,scale, divisor=None, None, None, None
         for k in self.items[0].data['items'][0].data['items']:
             if k.name=='PositionFunction':
@@ -257,8 +267,9 @@ class DektakLoad:
                 
 
 loader=DektakLoad(filename)
-x,y=loader.get_data()
+'''x,y=loader.get_data_1D()
 
 import matplotlib.pylab as plt
 plt.close('all')
-plt.plot(x,y)
+plt.plot(x,y)'''
+#%%
