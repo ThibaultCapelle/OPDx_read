@@ -306,6 +306,21 @@ class DektakLoad:
             plt.ylabel(symbol_y)
         return (mat.data['data']*scale.data['value'],
                 dim2.data['value'], dim1.data['value'])
+    
+    def get_metadata(self):
+        for item in self.items:
+            if item is not None:
+                if item.name=='MetaData':
+                    break
+        res=dict()
+        for k in item.data['items']:
+            if not isinstance(k.data, dict):
+                res[k.name]=k.data
+            else:
+                res[k.name]=dict()
+                for child in k.data['items']:
+                    res[k.name][child.name]=child.data
+        return res
                 
 
 loader=DektakLoad(filename)
@@ -314,3 +329,5 @@ x,y=loader.get_data_1D()
 import matplotlib.pylab as plt
 plt.close('all')
 plt.plot(x,y)
+
+print(loader.get_metadata())
