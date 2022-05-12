@@ -9,9 +9,7 @@ Created on Thu May  5 20:41:38 2022
 import numpy as np
 import struct
 import ctypes as ct
-import matplotlib.pylab as plt
 
-filename='test.OPDx'
 MAGIC=b'VCA DATA\x01\x00\x00U'
 MAGIC_SIZE=12
 
@@ -247,7 +245,7 @@ class DektakLoad:
             
         
     def read(self):
-        with open(filename, 'rb') as f:
+        with open(self.filename, 'rb') as f:
             while(f.tell()!=MAGIC_SIZE):
                 f.read(1)
             while(len(self.items)<10):
@@ -321,13 +319,15 @@ class DektakLoad:
                 for child in k.data['items']:
                     res[k.name][child.name]=child.data
         return res
-                
 
-loader=DektakLoad(filename)
-x,y=loader.get_data_1D()
-
-import matplotlib.pylab as plt
-plt.close('all')
-plt.plot(x,y)
-
-print(loader.get_metadata())
+if __name__=='__main__':               
+    
+    filename='02.OPDx'
+    loader=DektakLoad(filename)
+    x,y=loader.get_data_1D()
+    
+    import matplotlib.pylab as plt
+    plt.close('all')
+    plt.plot(x,y)
+    
+    print(loader.get_metadata())
