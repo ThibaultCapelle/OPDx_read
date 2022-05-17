@@ -9,6 +9,7 @@ Created on Thu May  5 20:41:38 2022
 import numpy as np
 import struct
 import ctypes as ct
+import matplotlib.pylab as plt
 
 MAGIC=b'VCA DATA\x01\x00\x00U'
 MAGIC_SIZE=12
@@ -322,12 +323,12 @@ class DektakLoad:
 
 if __name__=='__main__':               
     
-    filename='02.OPDx'
+    filename='bug_2d.OPDx'
     loader=DektakLoad(filename)
-    x,y=loader.get_data_1D()
+    res=loader.get_data_2D()
     
-    import matplotlib.pylab as plt
+    '''import matplotlib.pylab as plt
     plt.close('all')
     plt.plot(x,y)
     
-    print(loader.get_metadata())
+    print(loader.get_metadata())'''
