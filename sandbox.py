@@ -260,18 +260,23 @@ class DektakLoad:
             if item is not None:
                 if item.name=='1D_Data':
                     break
-        for subitem in item.data['items']:
-            if subitem.name=='Raw':
+        subitem=None
+        for k in item.data['items']:
+            if k.name=='Raw':
+                subitem=k
                 break
-        for k in subitem.data['items']:
-            if k.name=='PositionFunction':
-                x=k.data['data']
-                divisor=k.data['divisor']
-            elif k.name=='Array':
-                y=k.data['data']
-            elif k.name=='DataScale':
-                scale=k.data['value']
-        return x/divisor, y*scale/divisor
+        if subitem is not None:
+            for k in subitem.data['items']:
+                if k.name=='PositionFunction':
+                    x=k.data['data']
+                    divisor=k.data['divisor']
+                elif k.name=='Array':
+                    y=k.data['data']
+                elif k.name=='DataScale':
+                    scale=k.data['value']
+            return x/divisor, y*scale/divisor
+        else:
+            return None, None
     
     def get_data_2D(self, plot=True):
         for item in self.items:
@@ -325,7 +330,7 @@ if __name__=='__main__':
     
     filename='bug_2d.OPDx'
     loader=DektakLoad(filename)
-    res=loader.get_data_2D()
+    res=loader.get_data_1D()
     
     '''import matplotlib.pylab as plt
     plt.close('all')
