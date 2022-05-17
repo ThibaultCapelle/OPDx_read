@@ -283,33 +283,38 @@ class DektakLoad:
             if item is not None:
                 if item.name=='2D_Data':
                     break
-        for subitem in item.data['items']:
-            if subitem.name=='Raw':
+        subitem=None
+        for k in item.data['items']:
+            if k.name=='Raw':
+                subitem=k
                 break
-        for mat in subitem.data['items']:
-            if mat.name=='Matrix':
-                break
-        for scale in subitem.data['items']:
-            if scale.name=='DataScale':
-                break
-        for dim1 in subitem.data['items']:
-            if dim1.name=='Dimension1Extent':
-                break
-        for dim2 in subitem.data['items']:
-            if dim2.name=='Dimension2Extent':
-                break
-        for test in subitem.data['items']:
-            if test.name=='PositionFunction':
-                symbol_x, symbol_y=test.data['unit_symbol_x'], test.data['unit_symbol_y']
-                break
-        if plot:
-            plt.imshow(mat.data['data']*scale.data['value'],
-                       extent=[0,dim2.data['value'],
-                               0,dim1.data['value']])
-            plt.xlabel(symbol_x)
-            plt.ylabel(symbol_y)
-        return (mat.data['data']*scale.data['value'],
-                dim2.data['value'], dim1.data['value'])
+        if subitem is not None:
+            for mat in subitem.data['items']:
+                if mat.name=='Matrix':
+                    break
+            for scale in subitem.data['items']:
+                if scale.name=='DataScale':
+                    break
+            for dim1 in subitem.data['items']:
+                if dim1.name=='Dimension1Extent':
+                    break
+            for dim2 in subitem.data['items']:
+                if dim2.name=='Dimension2Extent':
+                    break
+            for test in subitem.data['items']:
+                if test.name=='PositionFunction':
+                    symbol_x, symbol_y=test.data['unit_symbol_x'], test.data['unit_symbol_y']
+                    break
+            if plot:
+                plt.imshow(mat.data['data']*scale.data['value'],
+                           extent=[0,dim2.data['value'],
+                                   0,dim1.data['value']])
+                plt.xlabel(symbol_x)
+                plt.ylabel(symbol_y)
+            return (mat.data['data']*scale.data['value'],
+                    dim2.data['value'], dim1.data['value'])
+        else:
+            return None, None, None
     
     def get_metadata(self):
         for item in self.items:
