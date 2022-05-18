@@ -337,8 +337,13 @@ if __name__=='__main__':
     loader=DektakLoad(filename)
     res=loader.get_data_1D()
     
+
+
     '''import matplotlib.pylab as plt
     plt.close('all')
     plt.plot(x,y)
     
     print(loader.get_metadata())'''
+
+
+    print("Hello Thibault")
