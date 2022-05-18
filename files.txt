@@ -1,1 +1,0 @@
-c:\users\thibault\anaconda3\lib\site-packages\OPDx_read-1.0-py3.6.egg

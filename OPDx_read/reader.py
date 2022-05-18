@@ -22,6 +22,7 @@ class DektakItem:
         self.data_type=data_type
         self.data=data
 
+
 class DektakLoad:
     data_types=dict({'DEKTAK_MATRIX'       : 0x00, # Too lazy to assign an actual type id?
                     'DEKTAK_BOOLEAN'      : 0x01, # Takes value 0 and 1 */
@@ -47,6 +48,7 @@ class DektakLoad:
                     'DEKTAK_TERMINATOR'   : 0x7f # Always the last item.
                                                    #Usually a couple of 0xff bytes inside. */
                                                    })
+    
     
     def __init__(self,filename):
         self.filename=filename
@@ -94,7 +96,6 @@ class DektakLoad:
     def read_item(self, f):
         if f.tell()==self.eof:
             return None
-        
         
         item=DektakItem()
         item.name=self.read_name(f)
@@ -242,6 +243,7 @@ class DektakLoad:
                 item=self.read_item(f)
                 self.items.append(item)
     
+    
     def get_data_1D(self):
         x,y,scale, divisor=None, None, None, None
         for item in self.items:
@@ -265,6 +267,7 @@ class DektakLoad:
             return x/divisor, y*scale/divisor
         else:
             return None, None
+    
     
     def get_data_2D(self, plot=True):
         for item in self.items:
@@ -312,6 +315,7 @@ class DektakLoad:
             return (xs, ys, zs)
         else:
             return None, None, None
+    
     
     def get_metadata(self):
         for item in self.items:
