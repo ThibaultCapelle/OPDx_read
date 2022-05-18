@@ -1,0 +1,7 @@
+README.md
+setup.py
+OPDx_read/reader.py
+OPDx_read.egg-info/PKG-INFO
+OPDx_read.egg-info/SOURCES.txt
+OPDx_read.egg-info/dependency_links.txt
+OPDx_read.egg-info/top_level.txt

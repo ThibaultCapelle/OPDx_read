@@ -11,11 +11,9 @@ import struct
 import ctypes as ct
 import matplotlib.pylab as plt
 
-MAGIC=b'VCA DATA\x01\x00\x00U'
+MAGIC=b'VCA DATA\x01\x00\x00U' #This sequence is the beginning of each file
 MAGIC_SIZE=12
-
-class EndOfFileSignal(Exception):
-       pass
+DEBUG=False
 
 class DektakItem:
     
@@ -23,7 +21,6 @@ class DektakItem:
         self.name=name
         self.data_type=data_type
         self.data=data
-        self.flag=False
 
 class DektakLoad:
     data_types=dict({'DEKTAK_MATRIX'       : 0x00, # Too lazy to assign an actual type id?
@@ -66,7 +63,6 @@ class DektakLoad:
     
     def read_varlen(self, f):
         length=int.from_bytes(f.read(1),"big")
-        #print('the length is {:}'.format(length))
         if length==1:
             return int.from_bytes(f.read(1),"big")
         elif length==2:
@@ -74,7 +70,7 @@ class DektakLoad:
         elif length==4:
             return int.from_bytes(f.read(4),"big")
         else:
-            print('there was a problem')
+            print('The varlength format was not respected')
             return -1
     
     def read_structured(self, item, f):
@@ -96,8 +92,6 @@ class DektakLoad:
 
     
     def read_item(self, f):
-        
-        #print(self.eof)
         if f.tell()==self.eof:
             return None
         
@@ -105,7 +99,8 @@ class DektakLoad:
         item=DektakItem()
         item.name=self.read_name(f)
         datatype=f.read(1)
-        #print('hello: {:}'.format(datatype))
+        if DEBUG:
+            print('the datatype of this item is: {:}'.format(datatype))
         item.data_type=int.from_bytes(datatype, "big")
         if item.data_type==DektakLoad.data_types['DEKTAK_BOOLEAN']:
             item.data=f.read(1)
@@ -166,7 +161,6 @@ class DektakLoad:
             length=self.read_varlen(f)
             item.data['value']=int.from_bytes(f.read(length), 'little')
         elif item.data_type==DektakLoad.data_types['DEKTAK_POS_RAW_DATA']:
-            #print([self.reading_1D, self.reading_2D])
             if self.reading_2D:
                 item.data=dict()
                 item.data['name']=self.read_name(f)
@@ -175,7 +169,6 @@ class DektakLoad:
                 item.data['unit_name_x']=self.read_name(f)
                 item.data['unit_symbol_x']=self.read_name(f)
                 item.data['divisor_x']=struct.unpack('d',f.read(8))[0]
-                #print(item.data)
                 f.read(12)
                 item.data['value_y']=struct.unpack('d',f.read(8))[0]
                 item.data['unit_name_y']=self.read_name(f)
@@ -210,12 +203,10 @@ class DektakLoad:
             item.data['data']=np.reshape(np.frombuffer(data,
                      dtype="float32"), (item.data['yres'],
                                     item.data['xres']))
-            #print(item.data['data'])
             
             
         elif item.data_type==DektakLoad.data_types['DEKTAK_MATRIX']:
             item.data=dict()
-            #item.data['int']=struct.unpack('i',f.read(4))[0]
             item.data['name']=f.read(4)
             item.data['size']=self.read_varlen(f)
             item.data['xres']=struct.unpack('I',f.read(4))[0]
@@ -224,14 +215,12 @@ class DektakLoad:
                 print('PROBLEM')
             item.data['size']-=2*ct.sizeof(ct.c_uint32)
         elif item.data_type==DektakLoad.data_types['DEKTAK_CONTAINER']:
-            #print('the name of this container is {:}'.format(item.name))
             if item.name=='1D_Data':
                 self.reading_1D=True
             elif item.name=='2D_Data':
                 self.reading_2D=True
             item=self.read_structured(item, f)
         elif item.data_type==DektakLoad.data_types['DEKTAK_RAW_DATA']:
-            #print('the name of this container is {:}'.format(item.name))
             item=self.read_structured(item, f)
         elif item.data_type==DektakLoad.data_types['DEKTAK_RAW_DATA_2D']:
             item=self.read_structured(item, f)
@@ -239,9 +228,9 @@ class DektakLoad:
             print('unknown data_type')
             print(f.read(100))
             print(item.data_type)
-            item.flag=True
-        '''print('{:},{:},{:}===>>>>{:} ; {:}'.format(item.data_type,
-              f.tell(), datatype, item.name, item.data))'''
+        if DEBUG:
+            print('{:},{:},{:}===>>>>{:} ; {:}'.format(item.data_type,
+              f.tell(), datatype, item.name, item.data))
         return item
             
         
@@ -251,7 +240,6 @@ class DektakLoad:
                 f.read(1)
             while(len(self.items)<10):
                 item=self.read_item(f)
-                #print('Number of items is {:}'.format(len(self.items)))
                 self.items.append(item)
     
     def get_data_1D(self):
@@ -289,11 +277,14 @@ class DektakLoad:
                 subitem=k
                 break
         if subitem is not None:
+            divisor=1
             for mat in subitem.data['items']:
                 if mat.name=='Matrix':
                     break
             for scale in subitem.data['items']:
                 if scale.name=='DataScale':
+                    if scale.data['name']=='Micrometer':
+                        divisor=1e6
                     break
             for dim1 in subitem.data['items']:
                 if dim1.name=='Dimension1Extent':
@@ -301,18 +292,24 @@ class DektakLoad:
             for dim2 in subitem.data['items']:
                 if dim2.name=='Dimension2Extent':
                     break
-            for test in subitem.data['items']:
-                if test.name=='PositionFunction':
-                    symbol_x, symbol_y=test.data['unit_symbol_x'], test.data['unit_symbol_y']
+            for subsubitem in subitem.data['items']:
+                if subsubitem.name=='PositionFunction':
+                    symbol_x, symbol_y=(subsubitem.data['unit_symbol_x'],
+                                        subsubitem.data['unit_symbol_y'])
                     break
             if plot:
+            
                 plt.imshow(mat.data['data']*scale.data['value'],
                            extent=[0,dim2.data['value'],
                                    0,dim1.data['value']])
                 plt.xlabel(symbol_x)
                 plt.ylabel(symbol_y)
-            return (mat.data['data']*scale.data['value'],
-                    dim2.data['value'], dim1.data['value'])
+            zs=mat.data['data']*scale.data['value']/divisor
+            xs=np.linspace(0, dim1.data['value'],
+                           np.shape(mat.data['data'])[1])
+            ys=np.linspace(0, dim2.data['value'],
+                           np.shape(mat.data['data'])[0])
+            return (xs, ys, zs)
         else:
             return None, None, None
     
@@ -330,20 +327,3 @@ class DektakLoad:
                 for child in k.data['items']:
                     res[k.name][child.name]=child.data
         return res
-
-if __name__=='__main__':               
-    
-    filename='bug_2d.OPDx'
-    loader=DektakLoad(filename)
-    res=loader.get_data_1D()
-    
-
-
-    '''import matplotlib.pylab as plt
-    plt.close('all')
-    plt.plot(x,y)
-    
-    print(loader.get_metadata())'''
-
-
-    print("Hello Thibault")
