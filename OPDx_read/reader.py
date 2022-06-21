@@ -96,7 +96,6 @@ class DektakLoad:
     def read_item(self, f):
         if f.tell()==self.eof:
             return None
-        
         item=DektakItem()
         item.name=self.read_name(f)
         datatype=f.read(1)
@@ -114,6 +113,8 @@ class DektakLoad:
             item.data=struct.unpack('Q',data)[0]
         elif item.data_type==DektakLoad.data_types['DEKTAK_UINT64']:
             item.data=struct.unpack('Q',f.read(8))[0]
+            if item.name=='SamplesToLog':
+                self.current_count=item.data
         elif item.data_type==DektakLoad.data_types['DEKTAK_FLOAT']:
             item.data=struct.unpack('f',f.read(4))[0]
         elif item.data_type==DektakLoad.data_types['DEKTAK_DOUBLE']:
@@ -233,6 +234,18 @@ class DektakLoad:
             print('{:},{:},{:}===>>>>{:} ; {:}'.format(item.data_type,
               f.tell(), datatype, item.name, item.data))
         return item
+    
+    def read_until(self, f, limit='\x06\x00\x00\x00Extent'):
+        string=b''
+        N=len(limit)
+        while(len(string)<N):
+            string+=f.read(1)
+        while(f.tell()!=self.eof):
+            if(string.endswith(limit)):
+                return string[:-N]
+            else:
+                string+=f.read(1)
+        return None
             
         
     def read(self):
