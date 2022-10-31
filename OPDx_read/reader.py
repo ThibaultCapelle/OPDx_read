@@ -130,10 +130,24 @@ class DektakLoad:
             length=self.read_varlen(f)
             item.data['strings']=[self.read_name(f)]
         elif item.data_type==DektakLoad.data_types['DEKTAK_DOUBLE_ARRAY']:
+            
             item.data=dict()
             item.data['datatype']=self.read_name(f)
-            f.read(8)
-            item.data['data']=np.frombuffer(f.read(self.current_count*8),
+            #First try to skip 8, then 10
+            ini=f.tell()
+            f.read(8+self.current_count*8)
+            data=f.read(4)
+            length=struct.unpack('i',data)[0]
+            try:
+                f.read(length).decode()
+                f.seek(ini)
+                f.read(8)
+                item.data['data']=np.frombuffer(f.read(self.current_count*8),
+                     dtype=float)
+            except UnicodeDecodeError:
+                f.seek(ini)
+                f.read(10)
+                item.data['data']=np.frombuffer(f.read(self.current_count*8),
                      dtype=float)
         elif item.data_type==DektakLoad.data_types['DEKTAK_UNITS']:
             item.data=dict()
