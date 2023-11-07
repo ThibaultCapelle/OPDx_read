@@ -128,7 +128,10 @@ class DektakLoad:
             item.data=dict()
             item.data['datatype']=self.read_name(f)
             length=self.read_varlen(f)
-            item.data['strings']=[self.read_name(f)]
+            if length>0:
+                item.data['strings']=[self.read_name(f)]
+            else:
+                item.data['strings']=[]
         elif item.data_type==DektakLoad.data_types['DEKTAK_DOUBLE_ARRAY']:
             
             item.data=dict()
