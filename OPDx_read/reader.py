@@ -39,6 +39,7 @@ class DektakLoad:
                     'DEKTAK_UNITS'        : 0x18, # Units (compound type) */
                     'DEKTAK_DOUBLE_ARRAY' : 0x40, # Raw data array, in XML Base64-encoded */
                     'DEKTAK_STRING_LIST'  : 0x42, # List of Str */
+                    'DEKTAK_VECTOR'       : 0x44, #a weird vector
                     'DEKTAK_ANON_MATRIX'  : 0x45, # Like DEKTAK_MATRIX, but with no name. */
                     'DEKTAK_RAW_DATA'     : 0x46, # Parent/wrapper tag of raw data */
                     'DEKTAK_RAW_DATA_2D'  : 0x47, # Parent/wrapper tag of raw data */
@@ -48,6 +49,8 @@ class DektakLoad:
                     'DEKTAK_TERMINATOR'   : 0x7f # Always the last item.
                                                    #Usually a couple of 0xff bytes inside. */
                                                    })
+    
+    inv_map_data_types = {v: k for k, v in data_types.items()}
     
     
     def __init__(self,filename):
@@ -222,17 +225,30 @@ class DektakLoad:
             item.data['data']=np.reshape(np.frombuffer(data,
                      dtype="float32"), (item.data['yres'],
                                     item.data['xres']))
-            
+                                        
+        elif item.data_type==DektakLoad.data_types['DEKTAK_VECTOR']:
+            item.data=dict()
+            item.data['type']=self.read_name(f)
+            item.data['size']=self.read_varlen(f)
+            item.data['coords']=f.read(item.data['size'])
             
         elif item.data_type==DektakLoad.data_types['DEKTAK_MATRIX']:
+            
             item.data=dict()
-            item.data['name']=f.read(4)
-            item.data['size']=self.read_varlen(f)
-            item.data['xres']=struct.unpack('I',f.read(4))[0]
-            item.data['yres']=struct.unpack('I',f.read(4))[0]
-            if item.data['size']<2*ct.sizeof(ct.c_uint32):
-                print('PROBLEM')
-            item.data['size']-=2*ct.sizeof(ct.c_uint32)
+            item.data['name']=self.read_name(f)
+            item.data['size']=struct.unpack('I',f.read(4))[0]
+            #f.seek(-2000,1)
+            #print(f.read(5000))
+            #1/0
+            if item.data['size']>0:
+                item.data['xres']=struct.unpack('I',f.read(4))[0]
+                item.data['yres']=struct.unpack('I',f.read(4))[0]
+                if item.data['size']<2*ct.sizeof(ct.c_uint32):
+                    print('PROBLEM')
+                item.data['size']-=2*ct.sizeof(ct.c_uint32)
+            else:
+                self.read_name(f)
+                self.read_varlen(f)
         elif item.data_type==DektakLoad.data_types['DEKTAK_CONTAINER']:
             if item.name=='1D_Data':
                 self.reading_1D=True
@@ -245,11 +261,13 @@ class DektakLoad:
             item=self.read_structured(item, f)
         else:
             print('unknown data_type')
-            print(f.read(100))
+            f.seek(-200,1)
+            print(f.read(1000))
             print(item.data_type)
         if DEBUG:
             print('{:},{:},{:}===>>>>{:} ; {:}'.format(item.data_type,
-              f.tell(), datatype, item.name, item.data))
+              f.tell(), datatype,
+              item.name, item.data))
         return item
     
     def read_until(self, f, limit='\x06\x00\x00\x00Extent'):
